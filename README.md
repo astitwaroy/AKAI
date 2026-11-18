@@ -1,123 +1,88 @@
-# VectorDB — Build a Vector Database from Scratch in C++
+# VectorDB
 
-A fully working **Vector Database** built from scratch in C++ with a web UI.  
-Implements **HNSW**, **KD-Tree**, and **Brute Force** search algorithms side-by-side, plus a **RAG pipeline** powered by a local LLM via Ollama.
+A vector database I wrote from scratch in C++, with a small web UI so you can actually see what it's doing.
 
-> Built as an educational project to show how production vector databases like Pinecone, Weaviate, and Chroma actually work under the hood.
+I made this because I wanted to know how vector databases like Pinecone, Weaviate and Chroma really work. Most tutorials import a library and stop there, so I wrote the indexing and search myself. It has three search algorithms you can run against each other (HNSW, KD-Tree and brute force), and a small RAG setup that uses a local LLM through Ollama to answer questions about your own notes.
 
----
+It's a learning project, not something you'd put in production, but everything in it works.
 
-## What This Project Does
+## What I used
 
-| Feature | Description |
-|---|---|
-| **3 Search Algorithms** | HNSW (production-grade), KD-Tree, Brute Force — run all three and compare speed |
-| **3 Distance Metrics** | Cosine similarity, Euclidean distance, Manhattan distance |
-| **16D Demo Vectors** | 20 pre-loaded semantic vectors across 4 categories (CS, Math, Food, Sports) |
-| **2D PCA Scatter Plot** | Live visualization of semantic space — watch clusters form |
-| **Real Document Embedding** | Paste any text → Ollama embeds it with `nomic-embed-text` (768D) |
-| **RAG Pipeline** | Ask questions about your documents → HNSW retrieves context → local LLM answers |
-| **Full REST API** | CRUD endpoints: insert, delete, search, benchmark, hnsw-info |
+- C++ for the whole backend. The three indexes, the REST API and the RAG logic all live in `main.cpp`.
+- cpp-httplib (`httplib.h`), a single-header HTTP library. It runs the server and also handles the calls out to Ollama.
+- Ollama, running locally. `nomic-embed-text` turns text into 768-dimensional vectors, and `llama3.2` writes the answers.
+- A single `index.html` for the frontend: the search page, the scatter plot, the documents page and the chat.
+- g++ from MSYS2 (UCRT64) to compile it on Windows.
 
----
+## What it can do
 
-## How It Works
+Search works on two kinds of data.
 
-```
-Your Text
-    │
-    ▼
-Ollama (nomic-embed-text)          ← converts text to a 768-dimensional vector
-    │
-    ▼
-HNSW Index (C++)                   ← indexes the vector in a multilayer graph
-    │
-    ▼
-Semantic Search                    ← finds nearest neighbors in vector space
-    │
-    ▼
-Ollama (llama3.2)                  ← reads retrieved chunks, generates an answer
-    │
-    ▼
-Answer
-```
+The first is a set of 20 pre-loaded demo vectors. Each one has 16 dimensions and belongs to one of four topics: computer science, math, food or sports. They're there so you can try search straight away without setting up Ollama. The UI squashes them down to 2D with PCA and plots them, and you can see each topic sitting in its own cluster. That picture is pretty much what "semantic similarity" means.
 
-**HNSW (Hierarchical Navigable Small World)** is the same algorithm used by Pinecone, Weaviate, Chroma, and Milvus. It builds a multilayer graph where each layer is progressively sparser — searches start at the top layer and zoom in, achieving O(log N) complexity instead of O(N) for brute force.
+For the demo vectors you can pick the algorithm (HNSW, KD-Tree or brute force) and the distance metric (cosine, Euclidean or Manhattan), or run all three algorithms on the same query and compare how fast they are.
 
----
-### Using the Application
+The second is real text. Paste in anything, like lecture notes or a Wikipedia article, and Ollama embeds it. Those embeddings go into their own HNSW index, separate from the demo vectors, and that's what the RAG part searches.
 
-### Tab 1: Search (Demo Vectors)
+## How a question gets answered
 
-- Type any concept in the search box: `binary tree`, `sushi`, `basketball`, `calculus`
-- Choose your algorithm: **HNSW**, **KD-Tree**, or **Brute Force**
-- Choose distance metric: **Cosine**, **Euclidean**, or **Manhattan**
-- Click **⚡ SEARCH** — results appear with distances, the matching point glows on the scatter plot
-- Click **▶ COMPARE ALL ALGOS** to run all 3 algorithms and compare their speed
+When you add a document:
 
-**The scatter plot** shows all 20 vectors projected to 2D using PCA. Notice how the 4 semantic categories (CS, Math, Food, Sports) form distinct clusters — this is what "semantic similarity" looks like visually.
+1. Long text is split into chunks of about 250 words. The chunks overlap a little so an idea sitting on the boundary doesn't get cut in half.
+2. Each chunk is sent to Ollama, and `nomic-embed-text` gives back a 768-number vector.
+3. That vector is added to the HNSW index.
 
-### Tab 2: Documents (Real Embeddings)
+When you ask a question:
 
-This uses Ollama to generate **real 768-dimensional embeddings** from any text.
+1. The question is embedded the same way.
+2. HNSW finds the 3 chunks closest to it.
+3. Those chunks go to `llama3.2` along with your question, and it answers using only that text.
 
-1. Type a title (e.g., `Operating Systems Notes`)
-2. Paste any text — lecture notes, textbook paragraphs, Wikipedia articles
-3. Click **⚡ EMBED & INSERT**
-4. Long documents are automatically split into overlapping 250-word chunks
-5. Each chunk gets its own embedding and is stored in a separate HNSW index
+On the Ollama side it only uses two endpoints, `/api/embeddings` and `/api/generate`.
 
-### Tab 3: Ask AI (RAG Pipeline)
+## Using the UI
 
-1. Make sure you have inserted some documents in Tab 2 first
-2. Type a question about your documents
-3. Click **🤖 ASK AI**
+### Search tab
 
-What happens behind the scenes:
-```
-1. Your question → embedded with nomic-embed-text (768D vector)
-2. HNSW search → finds 3 most semantically similar chunks
-3. Retrieved chunks → sent as context to llama3.2
-4. llama3.2 → generates an answer based only on your documents
-```
+Type a concept like `binary tree`, `sushi`, `basketball` or `calculus`, choose an algorithm and a distance metric, and hit Search. You get the nearest vectors with their distances, and the match lights up on the scatter plot. Compare All Algos runs the same query through all three algorithms so you can see the speed difference.
 
-The answer streams in with a typewriter effect. Click the **context chips** to see exactly which chunks the AI used.
+### Documents tab
 
----
+Give the document a title (something like `Operating Systems Notes`), paste the text and click Embed & Insert. Long documents get chunked automatically. The very first time can be slow because Ollama downloads the embedding model on first use.
 
-## REST API Reference
+### Ask AI tab
 
-The server exposes a full REST API at `http://localhost:8080`.
+Add at least one document first, otherwise there's nothing to search. Then type a question and click Ask AI. The answer types itself out, and the small chips under it show which chunks it used, so you can check where the answer came from.
 
-### Demo Vector Endpoints
+## REST API
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/search?v=f1,f2,...&k=5&metric=cosine&algo=hnsw` | K-NN search |
-| `POST` | `/insert` | Insert a demo vector |
-| `DELETE` | `/delete/:id` | Delete by ID |
-| `GET` | `/items` | List all demo vectors |
-| `GET` | `/benchmark?v=...&k=5&metric=cosine` | Compare all 3 algorithms |
-| `GET` | `/hnsw-info` | HNSW graph structure and layer stats |
-| `GET` | `/stats` | Database statistics |
+The server runs on `http://localhost:8080`.
 
-### Document & RAG Endpoints
+For the demo vectors:
 
-| Method | Endpoint | Body | Description |
-|---|---|---|---|
-| `POST` | `/doc/insert` | `{"title":"...","text":"..."}` | Embed and store document |
-| `GET` | `/doc/list` | — | List all stored documents |
-| `DELETE` | `/doc/delete/:id` | — | Delete document chunk |
-| `POST` | `/doc/ask` | `{"question":"...","k":3}` | RAG: retrieve + generate |
-| `GET` | `/status` | — | Ollama status and model info |
+- `GET /search?v=f1,f2,...&k=5&metric=cosine&algo=hnsw` does a k-nearest-neighbour search
+- `POST /insert` adds a demo vector
+- `DELETE /delete/:id` removes one by ID
+- `GET /items` lists all the demo vectors
+- `GET /benchmark?v=...&k=5&metric=cosine` runs a query through all three algorithms and compares them
+- `GET /hnsw-info` shows the HNSW graph structure and stats for each layer
+- `GET /stats` gives general database stats
 
-### Example: Search via curl
+For documents and RAG:
+
+- `POST /doc/insert` with `{"title":"...","text":"..."}` embeds and stores a document
+- `GET /doc/list` lists the stored documents
+- `DELETE /doc/delete/:id` deletes a document chunk
+- `POST /doc/ask` with `{"question":"...","k":3}` pulls the context and generates an answer
+- `GET /status` shows whether Ollama is up and which models are set
+
+A search from PowerShell:
 
 ```powershell
 curl "http://localhost:8080/search?v=0.9,0.8,0.7,0.6,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1&k=3&metric=cosine&algo=hnsw"
 ```
 
-### Example: Ask a question via curl
+Asking a question:
 
 ```powershell
 curl -X POST http://localhost:8080/doc/ask `
@@ -125,82 +90,62 @@ curl -X POST http://localhost:8080/doc/ask `
   -d '{"question":"What is dynamic programming?","k":3}'
 ```
 
----
+If you're on the older Windows PowerShell, `curl` is an alias for `Invoke-WebRequest` there, so type `curl.exe` instead.
 
-## Project Structure
+## The code
 
-```
-VectorDB/
-├── main.cpp        ← C++ backend (HNSW, KD-Tree, BruteForce, REST API, RAG)
-├── httplib.h       ← Single-header HTTP server library (cpp-httplib)
-├── index.html      ← Frontend (PCA scatter plot, chat UI, benchmark)
-└── README.md       ← This file
-```
+There are only four files: `main.cpp` (the whole backend), `httplib.h` (cpp-httplib), `index.html` (the frontend) and this README.
 
-### Architecture (main.cpp)
+Inside `main.cpp`, `BruteForce`, `KDTree` and `HNSW` are the three indexes. `VectorDB` puts all three behind one interface for the 16D demo vectors. `DocumentDB` is a separate HNSW-only index for the 768D Ollama embeddings, and `OllamaClient` is the small HTTP client that talks to Ollama.
 
-```
-BruteForce          O(N·d)      Exact, baseline
-KDTree              O(log N)    Exact, axis-aligned partitioning
-HNSW                O(log N)    Approximate, multilayer small-world graph
+## Notes on the algorithms
 
-VectorDB            Unified interface over all 3 (16D demo vectors)
-DocumentDB          HNSW-only index for real Ollama embeddings (768D)
-OllamaClient        HTTP client → /api/embeddings + /api/generate
-```
+### Brute force
 
----
+It compares the query against every single vector. That's O(N·d) and always exact. It's the baseline I measure the other two against.
 
-## Algorithm Deep Dive
+### KD-Tree
+
+It splits space in half again and again, one dimension at a time, cycling through the dimensions as the tree gets deeper. While searching, it skips a whole branch when even the closest point that branch could possibly hold is further away than the best match found so far.
+
+It's exact and close to O(log N) when there aren't many dimensions. The catch is that it falls apart as the dimensions go up. Up to around 20 it's fine, but at 768 it ends up checking nearly everything and is barely better than brute force. In high dimensions almost all of the space sits near the edges, so the distance bounds it relies on to skip branches hardly ever rule anything out.
 
 ### HNSW (Hierarchical Navigable Small World)
 
-Nodes are inserted into a multilayer graph. Each node randomly gets assigned a maximum layer. Layer 0 has all nodes with many connections; higher layers have fewer nodes (exponentially fewer) with longer-range connections.
+This is the one that matters. It's the same kind of graph index that Weaviate, Chroma and Milvus use.
 
-**Insert:** Start at the top layer, greedily find the nearest node, drop a layer, repeat. At each layer from your assigned max down to 0, run a beam search (ef_construction=200) and connect to the M nearest neighbors bidirectionally.
+Every vector is a node in a graph with several layers. When a node is inserted it's given a random top layer, and the odds drop off fast, so each layer up has far fewer nodes than the one below. Layer 0 has every node, with lots of short links. The upper layers are sparse and their links cover longer distances.
 
-**Search:** Same greedy descent from top layer. At layer 0, expand to ef nearest candidates using a priority queue.
+To insert a node, start at the top layer and walk greedily towards the new vector, then drop down a layer and do it again. From the node's own top layer down to layer 0, run a wider search (ef_construction = 200) and link it both ways to its M nearest neighbours.
 
-**Why it's fast:** The upper layers act like a highway — you quickly get to the right neighborhood, then zoom in at layer 0.
+Searching follows the same path down. Once it gets to layer 0, it widens out and keeps the ef best candidates in a priority queue.
 
-### KD-Tree (K-Dimensional Tree)
+The way I think about it, the upper layers are highways that get you to the right part of town quickly, and layer 0 is the local streets where you find the exact house. That's how it gets to roughly O(log N). It's approximate, so now and then it can miss the true nearest neighbour, but it's so much faster that the trade is worth it. It also doesn't split space along axes the way the KD-Tree does, so high dimensions don't break it.
 
-Binary space partitioning. Each node splits space along one dimension (cycling through all dimensions). Search prunes entire subtrees when the closest possible point in that subtree can't beat the current best — the "ball within hyperslab" check.
+## If something goes wrong
 
-**Weakness:** Degrades with high dimensions (curse of dimensionality). Works well for ≤20D, becomes close to brute force at 768D.
+- The header says `Ollama: OFFLINE`. Ollama isn't running, so start it with `ollama serve`.
+- Embedding takes forever the first time. Ollama is downloading the model, give it a couple of minutes.
+- `g++: command not found`. Add `C:\msys64\ucrt64\bin` to your Windows PATH.
+- Port 8080 is already in use. Find what's using it with `netstat -ano | findstr 8080`, then kill it with `taskkill /PID <pid> /F`.
+- Answers are slow. That's normal on a laptop CPU, where `llama3.2` can take 10 to 30 seconds. The smaller model below helps.
 
-### Why HNSW Wins at High Dimensions
+### Using a smaller model
 
-KD-Tree pruning relies on axis-aligned distance bounds. In high dimensions, almost all the space is near the boundary of the hypersphere — no subtrees get pruned. HNSW's graph-based approach doesn't have this problem.
-
----
-
-## Common Issues
-
-| Problem | Fix |
-|---|---|
-| `Ollama: OFFLINE` in header | Run `ollama serve` in a terminal |
-| Embedding takes forever | Ollama is downloading the model on first use, wait 2 min |
-| `g++: command not found` | Add `C:\msys64\ucrt64\bin` to Windows PATH |
-| Port 8080 already in use | Kill the process: `netstat -ano \| findstr 8080` then `taskkill /PID <pid> /F` |
-| LLM answer is slow | Normal — llama3.2 takes 10–30s on a laptop CPU. Use llama3.2:1b for faster answers |
-
-### Use a Smaller/Faster LLM
-
-If llama3.2 is too slow on your laptop, switch to the 1B model:
+If `llama3.2` is too slow on your machine, pull the 1B version:
 
 ```powershell
 ollama pull llama3.2:1b
 ```
 
-Then edit [main.cpp](main.cpp) line where `genModel` is set:
-```cpp
-std::string genModel = "llama3.2:1b";   // change this
-```
-Recompile and restart.
+Then change the line in `main.cpp` where `genModel` is set:
 
----
+```cpp
+std::string genModel = "llama3.2:1b";
+```
+
+Recompile and restart the server.
 
 ## License
 
-MIT — use this however you want.
+MIT. Do whatever you want with it.
